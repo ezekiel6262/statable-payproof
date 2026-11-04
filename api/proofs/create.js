@@ -1,37 +1,40 @@
 import crypto from 'node:crypto'
 import { allowPost, json, readJson } from '../_lib/http.js'
 import { listPayments, saveProof } from '../_lib/store.js'
+import { summarizeIncome } from '../_lib/income.js'
+import { signProof } from '../_lib/proof-integrity.js'
 
 const allowedPurposes = new Set(['Rent a home', 'Apply for a loan', 'Apply for a visa', 'General income proof'])
 
 export default async function handler(req, res) {
   if (!allowPost(req, res)) return
   try {
-    const { purpose } = await readJson(req)
+    const { purpose, subject } = await readJson(req)
     if (!allowedPurposes.has(purpose)) return json(res, 400, { error: 'Choose a valid proof purpose.' })
     const payments = await listPayments(100)
-    const income = payments.filter((payment) => payment.status === 'COMPLETED' && !['Not income', 'Refund', 'Loan', 'Internal transfer'].includes(payment.classification))
+    const summary = summarizeIncome(payments)
+    const income = summary.income
     if (!income.length) return json(res, 400, { error: 'Complete at least one verified income payment before creating a proof.' })
-    const total = income.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
-    const clients = new Set(income.map((payment) => payment.payer)).size
-    const timestamps = income.map((payment) => new Date(payment.createdAt).getTime()).filter(Number.isFinite)
-    const first = Math.min(...timestamps)
-    const months = Math.max(1, Math.ceil((Date.now() - first) / (30 * 86400000)) || 1)
-    const monthlyIncome = total / months
-    const recurring = income.filter((payment) => payment.classification === 'Recurring client income').length
-    const consistency = Math.min(100, Math.round(70 + Math.min(20, income.length * 4) + Math.min(10, recurring * 5)))
     const createdAt = new Date().toISOString()
+    const disclosure = {
+      'Rent a home': ['Verified monthly income', 'Income consistency', 'Paying-client count', 'Completed-payment evidence'],
+      'Apply for a loan': ['Verified monthly and annualized income', 'Income consistency', 'Client concentration', 'Payment history'],
+      'Apply for a visa': ['Verified income period', 'Completed-payment evidence', 'Income sources', 'Verification timestamp'],
+      'General income proof': ['Verified monthly and annualized income', 'Income consistency', 'Income sources', 'Completed-payment evidence'],
+    }[purpose]
     const proof = {
       id: `ST-${crypto.randomBytes(5).toString('hex').toUpperCase()}`,
       purpose,
       createdAt,
       expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
+      status: 'active',
       snapshot: {
-        subject: 'Amina Marku', monthlyIncome, annualIncome: monthlyIncome * 12, consistency, clients, months, paymentCount: income.length,
+        subject: String(subject || 'Amina Marku').trim().slice(0, 80), monthlyIncome: summary.monthlyIncome, annualIncome: summary.annualIncome, consistency: summary.consistency, clients: summary.clients, months: summary.months, paymentCount: summary.count, recurringClients: summary.recurringClients, recurringShare: summary.recurringShare, disclosure,
         source: 'PayPal', currency: income[0]?.currency || 'USD', verifiedAt: createdAt,
-        evidence: income.map(({ id, payer, amount, currency, classification, confidence, createdAt: paidAt }) => ({ id, payer, amount, currency, classification, confidence, paidAt })),
+        evidence: income.map(({ id, client, amount, currency, classification, confidence, createdAt: paidAt, model, aiStatus }) => ({ id, client, amount, currency, classification, confidence, paidAt, model, aiStatus })),
       },
     }
+    proof.digest = signProof(proof)
     await saveProof(proof)
     json(res, 201, { id: proof.id, shareUrl: `https://statable-payproof.vercel.app/#proof?id=${proof.id}`, proof })
   } catch (error) {

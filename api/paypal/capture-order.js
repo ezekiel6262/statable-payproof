@@ -1,7 +1,7 @@
 import { allowPost, json, readJson } from '../_lib/http.js'
 import { paypalFetch } from '../_lib/paypal.js'
 import { classifyPayment, paymentFromCapture } from '../_lib/classify-payment.js'
-import { savePayment, storageConfigured } from '../_lib/store.js'
+import { getOrderRequest, listPayments, savePayment, storageConfigured } from '../_lib/store.js'
 
 export default async function handler(req, res) {
   if (!allowPost(req, res)) return
@@ -14,8 +14,9 @@ export default async function handler(req, res) {
       body: '{}',
     })
     const capture = order.purchase_units?.[0]?.payments?.captures?.[0]
-    const basePayment = paymentFromCapture({ order, capture })
-    const classification = await classifyPayment(basePayment)
+    const [metadata, history] = await Promise.all([getOrderRequest(orderId), listPayments(100)])
+    const basePayment = paymentFromCapture({ order, capture, metadata })
+    const classification = await classifyPayment(basePayment, history)
     const payment = { ...basePayment, ...classification }
     const saved = await savePayment(payment)
     json(res, 200, { id: order.id, status: order.status, captureId: capture?.id, payment, saved, storageConfigured: storageConfigured(), detail: capture?.status === 'COMPLETED' ? (saved ? 'PayPal verified, AI-classified, and saved this income payment.' : 'PayPal verified this payment. Connect storage to retain it in the income record.') : 'PayPal processed the payment capture.' })

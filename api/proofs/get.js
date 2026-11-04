@@ -1,5 +1,6 @@
 import { json } from '../_lib/http.js'
 import { getProof } from '../_lib/store.js'
+import { verifyProof } from '../_lib/proof-integrity.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' })
@@ -8,8 +9,9 @@ export default async function handler(req, res) {
     if (!/^ST-[A-F0-9]{10}$/.test(id)) return json(res, 400, { error: 'A valid proof ID is required.' })
     const proof = await getProof(id)
     if (!proof) return json(res, 404, { error: 'Proof not found.' })
+    if (proof.status === 'revoked') return json(res, 410, { error: 'This proof was revoked by its owner.', proof: { id: proof.id, status: proof.status, revokedAt: proof.revokedAt } })
     if (new Date(proof.expiresAt).getTime() < Date.now()) return json(res, 410, { error: 'This proof has expired.' })
-    json(res, 200, { proof })
+    json(res, 200, { proof: { ...proof, integrity: verifyProof(proof), digestPreview: proof.digest ? `${proof.digest.slice(0, 12)}…${proof.digest.slice(-8)}` : null } })
   } catch (error) {
     json(res, 502, { error: error instanceof Error ? error.message : 'Unable to read proof' })
   }

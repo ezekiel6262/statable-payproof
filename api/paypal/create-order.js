@@ -1,5 +1,6 @@
 import { allowPost, json, readJson } from '../_lib/http.js'
 import { paypalConfigured, paypalFetch } from '../_lib/paypal.js'
+import { saveOrderRequest } from '../_lib/store.js'
 
 export default async function handler(req, res) {
   if (!allowPost(req, res)) return
@@ -35,6 +36,7 @@ export default async function handler(req, res) {
       }),
     })
     const approveUrl = data.links?.find((link) => link.rel === 'approve' || link.rel === 'payer-action')?.href
+    await saveOrderRequest({ orderId: data.id, client: String(input.client).trim(), description: String(input.description || 'Professional services').trim(), amount, currency: input.currency || 'USD', status: data.status })
     json(res, 201, { demo: false, id: data.id, status: data.status, approveUrl, detail: `Payment request created for ${input.client}.` })
   } catch (error) {
     json(res, 502, { error: error instanceof Error ? error.message : 'Unable to create PayPal payment request' })
