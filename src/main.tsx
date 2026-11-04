@@ -18,7 +18,8 @@ function Mark() {
 }
 
 function App() {
-  const initial = location.hash.startsWith('#app') ? 'app' : location.hash.startsWith('#proof') ? 'proof' : 'home'
+  const paypalReturn = new URLSearchParams(location.search).has('paypal')
+  const initial = location.hash.startsWith('#app') || paypalReturn ? 'app' : location.hash.startsWith('#proof') ? 'proof' : 'home'
   const [view, setView] = useState<View>(initial)
   const go = (next: View) => { setView(next); location.hash = next === 'home' ? '' : next; scrollTo(0, 0) }
   return view === 'home' ? <Home go={go}/> : view === 'app' ? <Dashboard go={go}/> : <Proof go={go}/>
