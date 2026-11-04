@@ -18,7 +18,17 @@ npm install
 npm run dev
 ```
 
-The current build is an interactive product prototype. Live PayPal sandbox APIs, webhook verification, and model-backed reconciliation are the next integration milestone.
+## Production services
+
+- `GET /api/health` reports PayPal and AI service readiness without exposing secrets.
+- `POST /api/paypal/create-invoice` creates a PayPal Sandbox draft invoice, with a safe demo response when credentials are absent.
+- `POST /api/paypal/webhook` verifies PayPal webhook signatures before accepting events.
+- `POST /api/ai/classify` uses Vercel AI Gateway for explainable income classification, with a deterministic fallback.
+- `POST /api/ai/ask` answers reviewer questions only from the disclosed proof evidence.
+
+Copy `.env.example` to `.env.local` for local integrations. Never commit `.env.local`.
+
+The deployed app remains usable in demo mode when PayPal credentials have not been configured. On Vercel, AI Gateway uses the automatically injected OIDC token.
 
 ## License
 
