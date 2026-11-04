@@ -18,7 +18,7 @@ function Mark() {
 }
 
 function App() {
-  const initial = location.hash === '#app' ? 'app' : location.hash === '#proof' ? 'proof' : 'home'
+  const initial = location.hash.startsWith('#app') ? 'app' : location.hash.startsWith('#proof') ? 'proof' : 'home'
   const [view, setView] = useState<View>(initial)
   const go = (next: View) => { setView(next); location.hash = next === 'home' ? '' : next; scrollTo(0, 0) }
   return view === 'home' ? <Home go={go}/> : view === 'app' ? <Dashboard go={go}/> : <Proof go={go}/>
@@ -68,7 +68,10 @@ function Dashboard({ go }: { go: (v: View) => void }) {
   const [purpose, setPurpose] = useState<Purpose>('Rent a home')
   const [connected, setConnected] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [invoiceOpen, setInvoiceOpen] = useState(false)
+  const [proofError, setProofError] = useState('')
+  const paypalReturn = new URLSearchParams(location.search)
+  const returnedOrderId = paypalReturn.get('paypal') === 'approved' ? paypalReturn.get('token') : null
+  const [invoiceOpen, setInvoiceOpen] = useState(Boolean(returnedOrderId))
   const [connectionLabel, setConnectionLabel] = useState('Connect PayPal')
   const [livePayments, setLivePayments] = useState<typeof payments>([])
   const [liveSummary, setLiveSummary] = useState({ total: 0, count: 0, clients: 0 })
@@ -84,7 +87,17 @@ function Dashboard({ go }: { go: (v: View) => void }) {
     } catch { /* retain demo fallback */ }
   }
   useEffect(() => { syncPayments(); window.addEventListener('statable-payment', syncPayments); return () => window.removeEventListener('statable-payment', syncPayments) }, [])
-  const create = () => { setCreating(true); setTimeout(() => go('proof'), 900) }
+  const create = async () => {
+    setCreating(true); setProofError('')
+    try {
+      const response = await fetch('/api/proofs/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({purpose})})
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to create proof')
+      setViewAndHash('proof', `id=${encodeURIComponent(data.id)}`)
+    } catch (error) { setProofError(error instanceof Error ? error.message : 'Unable to create proof') }
+    finally { setCreating(false) }
+  }
+  const setViewAndHash = (view: View, query = '') => { go(view); location.hash = `${view}${query ? `?${query}` : ''}` }
   const connectPayPal = async () => {
     setConnectionLabel('Checking PayPal…')
     try { const data = await fetch('/api/paypal/status').then(r => r.json()); setConnected(true); setConnectionLabel(data.configured ? 'PayPal Sandbox connected' : 'PayPal demo connected') }
@@ -93,13 +106,13 @@ function Dashboard({ go }: { go: (v: View) => void }) {
   return <div className="app-shell"><aside><Mark/><div className="side-nav"><button className="active"><WalletCards/> Income</button><button><Sparkles/> Review <b>1</b></button><button><FileCheck2/> Proofs</button></div><div className="side-bottom"><div className="mini-user">AM</div><div><b>Amina Marku</b><small>Demo workspace</small></div></div></aside><main className="dashboard"><header><div><p className="crumb">INCOME RECORD</p><h1>Good morning, Amina.</h1></div><button className={connected?'connected':'connect'} onClick={connectPayPal}><span className="paypal-p">P</span>{connected?connectionLabel:connectionLabel}</button></header>
     <section className="summary-grid"><div className="summary-main"><p>Verified income captured</p><h2>{livePayments.length?new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(liveSummary.total):'$4,870'}</h2><span className="positive">{livePayments.length?'Live PayPal Sandbox record':'↑ 6.8% over 6 months'}</span><div className="bars">{[48,61,57,72,69,84,78,91,88,96,90,100].map((h,i)=><i key={i} style={{height:h+'%'}} className={i>8?'hot':''}/>)}</div><div className="axis"><span>May</span><span>Nov</span></div></div><div className="stat"><p>Income consistency</p><h3>86<span>/100</span></h3><div className="ring"><span>Strong</span></div><small>{recurring} recurring client relationships detected</small></div><div className="stat"><p>Verified payments</p><h3>{livePayments.length?liveSummary.count:18} <span>payments</span></h3><div className="source-row"><span className="paypal-p">P</span><div><b>PayPal</b><small>{storageReady?'Live record connected':'Demo data · storage pending'}</small></div></div><small>{livePayments.length?`${liveSummary.clients} paying clients`:'18 completed payments analysed'}</small></div></section>
     <section className="work-grid"><div className="payments"><div className="panel-head"><div><p className="crumb">PAYMENT RECORD</p><h2>What counts as income</h2></div><div className="panel-actions"><button onClick={syncPayments}><RefreshCw size={15}/> Sync</button><button className="new-invoice" onClick={()=>setInvoiceOpen(true)}>+ Request PayPal payment</button></div></div>{shownPayments.map((p,i)=><div className="pay-row" key={p.paypal}><div className="avatar">{p.client[0]}</div><div className="pay-name"><b>{p.client}</b><small>{p.date} · PayPal ID {p.paypal}</small></div><div className={'classification '+p.tone}><b>{p.kind}</b><small><Sparkles size={11}/>{p.confidence}% AI confidence</small></div><strong>{p.amount}</strong>{i===3&&<button className="review-btn">Review</button>}</div>)}</div>
-      <div className="builder"><p className="crumb">PROOF BUILDER</p><h2>What do you need to prove?</h2><p>We'll include only the information needed for this purpose.</p><div className="purpose-list">{(['Rent a home','Apply for a loan','Apply for a visa','General income proof'] as Purpose[]).map(x=><button className={purpose===x?'chosen':''} onClick={()=>setPurpose(x)} key={x}><span>{x}</span>{purpose===x?<Check size={16}/>:<ChevronRight size={16}/>}</button>)}</div><div className="share-note"><LockKeyhole size={17}/><span>Your purchases and balance will not be shared.</span></div><button className="button full" onClick={create}>{creating?'Building proof…':'Create '+purpose.toLowerCase()+' proof'} {!creating&&<ArrowRight size={16}/>}</button></div></section>
-  </main>{invoiceOpen&&<InvoiceModal close={()=>setInvoiceOpen(false)}/>}</div>
+      <div className="builder"><p className="crumb">PROOF BUILDER</p><h2>What do you need to prove?</h2><p>We'll include only the information needed for this purpose.</p><div className="purpose-list">{(['Rent a home','Apply for a loan','Apply for a visa','General income proof'] as Purpose[]).map(x=><button className={purpose===x?'chosen':''} onClick={()=>setPurpose(x)} key={x}><span>{x}</span>{purpose===x?<Check size={16}/>:<ChevronRight size={16}/>}</button>)}</div><div className="share-note"><LockKeyhole size={17}/><span>Your purchases and balance will not be shared.</span></div>{proofError&&<p className="form-error">{proofError}</p>}<button className="button full" onClick={create}>{creating?'Building proof…':'Create '+purpose.toLowerCase()+' proof'} {!creating&&<ArrowRight size={16}/>}</button></div></section>
+  </main>{invoiceOpen&&<InvoiceModal initialOrderId={returnedOrderId || undefined} close={()=>{setInvoiceOpen(false);history.replaceState(null,'','/#app')}}/>}</div>
 }
 
-function InvoiceModal({ close }: { close: () => void }) {
+function InvoiceModal({ close, initialOrderId }: { close: () => void; initialOrderId?: string }) {
   const [form, setForm] = useState({ client: 'Kestrel Labs', email: 'client@example.com', amount: '1850', description: 'Monthly product design services' })
-  const [result, setResult] = useState<{id?:string;detail?:string;error?:string;demo?:boolean;status?:string;approveUrl?:string;captureId?:string}|null>(null)
+  const [result, setResult] = useState<{id?:string;detail?:string;error?:string;demo?:boolean;status?:string;approveUrl?:string;captureId?:string}|null>(initialOrderId?{id:initialOrderId,status:'CHECKING',detail:'Confirming approval with PayPal…'}:null)
   const [busy, setBusy] = useState(false)
   const submit = async () => {
     setBusy(true); setResult(null)
@@ -108,11 +121,28 @@ function InvoiceModal({ close }: { close: () => void }) {
     finally { setBusy(false) }
   }
   const check = async () => { if(!result?.id)return; setBusy(true); try { const data=await fetch(`/api/paypal/order-status?id=${encodeURIComponent(result.id)}`).then(r=>r.json()); setResult({...result,...data,detail:data.error||`PayPal reports this payment request as ${data.status || 'unknown'}.`}) } finally { setBusy(false) } }
-  const capture = async () => { if(!result?.id)return; setBusy(true); try { const data=await fetch('/api/paypal/capture-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId:result.id})}).then(r=>r.json()); setResult({...result,...data,detail:data.error||data.detail}); if(data.saved) window.dispatchEvent(new Event('statable-payment')) } finally { setBusy(false) } }
+  const capture = async () => { if(!result?.id)return; setBusy(true); try { const data=await fetch('/api/paypal/capture-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId:result.id})}).then(r=>r.json()); setResult({...result,...data,detail:data.error||data.detail}); if(data.saved){ history.replaceState(null,'','/#app'); window.dispatchEvent(new Event('statable-payment')) } } finally { setBusy(false) } }
+  useEffect(()=>{ if(initialOrderId) capture() },[])
   return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&close()}><div className="modal"><button className="modal-close" onClick={close}><X size={18}/></button><div className="paypal-heading"><span className="paypal-p">P</span><div><p className="crumb">PAYPAL PAYMENT REQUEST</p><h2>Create verifiable income</h2></div></div><p>Ask a client to approve a real PayPal Sandbox payment. Once completed, Statable can use the verified PayPal event as income evidence.</p>{result?.id?<><div className="invoice-success"><Check/><div><b>Request {result.id} · {result.status || 'CREATED'}</b><p>{result.detail || 'Created securely through PayPal Sandbox.'}</p></div></div>{!result.demo&&<div className="invoice-actions">{result.approveUrl&&result.status==='CREATED'&&<a className="button full" href={result.approveUrl} target="_blank" rel="noreferrer">Approve in PayPal Sandbox <ArrowRight size={16}/></a>}<button className="button full secondary" onClick={result.status==='APPROVED'?capture:check} disabled={busy}>{busy?'Contacting PayPal…':result.status==='APPROVED'?'Capture verified payment':'Check payment status'} <ArrowRight size={16}/></button></div>}</>:<><label>Client name<input value={form.client} onChange={e=>setForm({...form,client:e.target.value})}/></label><label>Client email<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><div className="field-row"><label>Amount<input type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/></label><label>Currency<input value="USD" disabled/></label></div><label>Description<input value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label>{result?.error&&<p className="form-error">{result.error}</p>}<button className="button full" onClick={submit} disabled={busy}>{busy?'Creating securely…':'Create PayPal payment request'} {!busy&&<ArrowRight size={16}/>}</button></>}</div></div>
 }
 
 function Proof({ go }: { go: (v: View) => void }) {
+  const proofId = new URLSearchParams(location.hash.split('?')[1] || '').get('id')
+  return proofId ? <DynamicProof id={proofId} go={go}/> : <SampleProof go={go}/>
+}
+
+function DynamicProof({ id, go }: { id: string; go: (v: View) => void }) {
+  const [proof, setProof] = useState<any>(null)
+  const [error, setError] = useState('')
+  useEffect(()=>{ fetch(`/api/proofs/get?id=${encodeURIComponent(id)}`).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error);setProof(data.proof)}).catch(error=>setError(error.message)) },[id])
+  if(error) return <div className="verify-page"><header className="verify-nav"><Mark/></header><main className="certificate"><div className="cert-head"><div className="verified-icon"><X/></div><p className="caps">PROOF UNAVAILABLE</p><h1>{error}</h1><button className="back-demo" onClick={()=>go('app')}>← Back to income record</button></div></main></div>
+  if(!proof) return <div className="verify-page"><header className="verify-nav"><Mark/></header><main className="certificate"><div className="cert-head"><p className="caps">VERIFYING INCOME PROOF</p><h1>Checking the record…</h1></div></main></div>
+  const s=proof.snapshot
+  const money=(value:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:s.currency||'USD',maximumFractionDigits:0}).format(value)
+  return <div className="verify-page"><header className="verify-nav"><Mark/><span className="verified-badge"><ShieldCheck size={15}/> Verified by Statable</span></header><main className="certificate"><div className="cert-head"><div className="verified-icon"><Check/></div><p className="caps">VERIFIED INCOME PROOF · {proof.purpose.toUpperCase()}</p><h1>{s.subject} earns an average of<br/><em>{money(s.monthlyIncome)} per month.</em></h1><p>This privacy-scoped record is based only on completed PayPal income payments. Purchases, balances, and payer contact details are excluded.</p><div className="verified-by"><span className="paypal-p">P</span><div><b>Payment evidence verified by PayPal</b><small>Checked {new Date(s.verifiedAt).toLocaleString()}</small></div></div></div><div className="cert-grid"><div className="cert-stat"><p>Verified annual income</p><h2>{money(s.annualIncome)}</h2><small>Based on the verified period</small></div><div className="cert-stat"><p>Income consistency</p><h2>{s.consistency} <span>/ 100</span></h2><small>Explainable payment pattern score</small></div><div className="cert-stat"><p>Independent clients</p><h2>{s.clients}</h2><small>{s.paymentCount} completed payments</small></div></div><section className="evidence"><div><p className="crumb">WHAT WAS VERIFIED</p><h2>Evidence behind this proof</h2></div><div className="evidence-list">{s.evidence.map((item:any)=><p key={item.id}><Check/>{item.classification}: {money(item.amount)} · {item.confidence}% confidence</p>)}</div></section><div className="cert-foot"><span>Proof ID {proof.id}</span><span>Created {new Date(proof.createdAt).toLocaleDateString()}</span><span>Integrity check passed <Check size={13}/></span></div><button className="back-demo" onClick={()=>go('app')}>← Back to income record</button></main></div>
+}
+
+function SampleProof({ go }: { go: (v: View) => void }) {
   const [open, setOpen] = useState(false)
   const [question, setQuestion] = useState('Is this income recurring?')
   const [answer, setAnswer] = useState('')

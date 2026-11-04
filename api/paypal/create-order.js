@@ -29,8 +29,8 @@ export default async function handler(req, res) {
         application_context: {
           brand_name: 'Statable',
           user_action: 'PAY_NOW',
-          return_url: 'https://statable-payproof.vercel.app/#app',
-          cancel_url: 'https://statable-payproof.vercel.app/#app',
+          return_url: 'https://statable-payproof.vercel.app/?paypal=approved#app',
+          cancel_url: 'https://statable-payproof.vercel.app/?paypal=cancelled#app',
         },
       }),
     })

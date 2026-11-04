@@ -67,3 +67,28 @@ export async function listPayments(limit = 50) {
     createdAt: row.created_at,
   }))
 }
+
+export async function saveProof(proof) {
+  if (!storageConfigured()) return false
+  await request('proofs?on_conflict=id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({
+      id: proof.id,
+      merchant_id: 'demo',
+      purpose: proof.purpose,
+      snapshot: proof.snapshot,
+      created_at: proof.createdAt,
+      expires_at: proof.expiresAt,
+    }),
+  })
+  return true
+}
+
+export async function getProof(id) {
+  if (!storageConfigured()) return null
+  const rows = await request(`proofs?select=*&id=eq.${encodeURIComponent(id)}&limit=1`)
+  const row = rows?.[0]
+  if (!row) return null
+  return { id: row.id, purpose: row.purpose, snapshot: row.snapshot, createdAt: row.created_at, expiresAt: row.expires_at }
+}
