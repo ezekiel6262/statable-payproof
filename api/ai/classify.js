@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   if (!allowPost(req, res)) return
   const input = await readJson(req)
   if (!input.payment) return json(res, 400, { error: 'Payment is required' })
-  const token = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN
+  const token = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || req.headers['x-vercel-oidc-token']
   if (!token) return json(res, 200, fallback(input.payment))
   try {
     const response = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
